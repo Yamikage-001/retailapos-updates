@@ -1,11 +1,19 @@
 {
-  "version": "1.0.4",
-  "build": 4,
+  "version": "1.0.5",
+  "build": 5,
   "notes": "Stock fixes and automatic updates.",
   "platforms": {
     "android": {
-      "url": "https://github.com/Yamikage-001/retailapos-updates/releases/download/v1.0.4+4/RetailaPOS-v1.0.4+4-android.apk",
-      "sha256": "dd58b3f9eadce4fe9ca5d0bb0d8a807387923aad778ff0e4a5b7e2173951b73a"
+      "url": "https://github.com/Yamikage-001/retailapos-updates/releases/download/v1.0.5+5/RetailaPOS-v1.0.5+5-android.apk",
+      "sha256": "fbbee3b2965732dfb5a95f3b8751aa5c6cae64c9daccfefab11ba5e011768514"
+    },
+    "windows": {
+      "url": "https://github.com/Yamikage-001/retailapos-updates/releases/download/v1.0.5+5/RetailaPOS-v1.0.5+5-windows.exe",
+      "sha256": "2e6b398ef4b82d0bf1c49d64cea07cb820fe790d44b7c9a9f9b845b02d6469d4"
+    },
+    "macos": {
+      "url": "https://github.com/Yamikage-001/retailapos-updates/releases/download/v1.0.5+5/RetailaPOS-v1.0.5+5-macos.dmg",
+      "sha256": "450373461bc1d1b782a6e2d976123a959990682c158b61f71d99511698a8b3d4"
     }
   }
 }
