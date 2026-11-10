@@ -1,0 +1,209 @@
+name: Build and publish RetailaPOS update
+
+# The app's code stays in Altris-Product-Systems/Apex-Mobile. This workflow
+# checks it out, builds and signs the installers, and publishes them here with
+# the update manifest the app reads.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version in pubspec.yaml (major.minor.patch)
+        required: true
+        type: string
+      build:
+        description: Build number in pubspec.yaml
+        required: true
+        type: string
+      notes:
+        description: Release notes shown in the app
+        required: true
+        type: string
+      platforms:
+        description: Platforms to build (android, windows, macos). Windows and macOS need their signing secrets.
+        required: true
+        default: android
+        type: string
+      ref:
+        description: Branch, tag or commit of Apex-Mobile to build
+        required: true
+        default: main
+        type: string
+
+concurrency:
+  group: retailapos-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_REPO: Altris-Product-Systems/Apex-Mobile
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+      - name: Match release to pubspec
+        env:
+          VERSION: ${{ inputs.version }}
+          BUILD: ${{ inputs.build }}
+        run: |
+          grep -Fx "version: $VERSION+$BUILD" pubspec.yaml
+
+  android:
+    needs: validate
+    if: contains(inputs.platforms, 'android')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.9'
+          channel: stable
+      - name: Prepare signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE" && test -n "$PASSWORD"
+          printf '%s' "$KEYSTORE" | base64 --decode > android/retaila-release.jks
+          printf 'storeFile=retaila-release.jks\nstorePassword=%s\nkeyAlias=retaila\nkeyPassword=%s\n' "$PASSWORD" "$PASSWORD" > android/key.properties
+      - run: flutter pub get
+      - name: Build signed Android APK
+        env:
+          VERSION: ${{ inputs.version }}
+          BUILD: ${{ inputs.build }}
+        run: flutter build apk --release --build-name "$VERSION" --build-number "$BUILD"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  windows:
+    needs: validate
+    if: contains(inputs.platforms, 'windows')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.9'
+          channel: stable
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Prepare code signing certificate
+        shell: pwsh
+        env:
+          CERTIFICATE: ${{ secrets.WINDOWS_SIGN_CERT_BASE64 }}
+        run: |
+          if (-not $env:CERTIFICATE) { throw 'WINDOWS_SIGN_CERT_BASE64 is required' }
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\retaila-sign.pfx", [Convert]::FromBase64String($env:CERTIFICATE))
+          "WINDOWS_SIGN_CERT_PFX=$env:RUNNER_TEMP\retaila-sign.pfx" >> $env:GITHUB_ENV
+          $tool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $tool) { throw 'signtool.exe is required' }
+          $tool.DirectoryName >> $env:GITHUB_PATH
+      - run: flutter pub get
+      - name: Build and sign Windows installer
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGN_CERT_PASSWORD }}
+        run: .\scripts\build_windows_release.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: build/releases/*-windows.exe
+          if-no-files-found: error
+
+  macos:
+    needs: validate
+    if: contains(inputs.platforms, 'macos')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.9'
+          channel: stable
+      - name: Install Apple distribution identity
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$CERTIFICATE" && test -n "$CERT_PASSWORD" && test -n "$APPLE_ID" && test -n "$APP_PASSWORD" && test -n "$TEAM_ID"
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/retaila.p12"
+          security create-keychain -p runner "$RUNNER_TEMP/retaila.keychain-db"
+          security unlock-keychain -p runner "$RUNNER_TEMP/retaila.keychain-db"
+          security import "$RUNNER_TEMP/retaila.p12" -k "$RUNNER_TEMP/retaila.keychain-db" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k runner "$RUNNER_TEMP/retaila.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/retaila.keychain-db"
+          xcrun notarytool store-credentials retaila-release --apple-id "$APPLE_ID" --password "$APP_PASSWORD" --team-id "$TEAM_ID"
+      - run: flutter pub get
+      - name: Build, sign and notarize macOS disk image
+        env:
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          APPLE_NOTARY_PROFILE: retaila-release
+        run: bash scripts/build_macos_release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: build/releases/*-macos.dmg
+          if-no-files-found: error
+
+  publish:
+    needs: [android, windows, macos]
+    # Every requested platform must have built; unrequested ones are left out.
+    if: >-
+      always() &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled') &&
+      (needs.android.result == 'success' || needs.windows.result == 'success' || needs.macos.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/artifacts
+      - name: Publish installers and manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          BUILD: ${{ inputs.build }}
+          NOTES: ${{ inputs.notes }}
+          ARTIFACTS: ${{ runner.temp }}/artifacts
+        run: |
+          git config user.name 'RetailaPOS Release Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          args=()
+          apk="$(find "$ARTIFACTS/android" -name '*.apk' -print -quit 2>/dev/null || true)"
+          exe="$(find "$ARTIFACTS/windows" -name '*.exe' -print -quit 2>/dev/null || true)"
+          dmg="$(find "$ARTIFACTS/macos" -name '*.dmg' -print -quit 2>/dev/null || true)"
+          [ -n "$apk" ] && args+=(--android "$apk")
+          [ -n "$exe" ] && args+=(--windows "$exe")
+          [ -n "$dmg" ] && args+=(--macos "$dmg")
+          python3 scripts/publish.py "$VERSION" "$BUILD" "${args[@]}" --notes "$NOTES"
