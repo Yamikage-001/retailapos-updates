@@ -1,6 +1,11 @@
 {
-  "version": "1.0.0",
-  "build": 1,
-  "notes": "",
-  "platforms": {}
+  "version": "1.0.1",
+  "build": 2,
+  "notes": "Stock fixes and automatic updates",
+  "platforms": {
+    "android": {
+      "url": "https://github.com/Yamikage-001/retailapos-updates/releases/download/v1.0.1+2/RetailaPOS-v1.0.1+2-android.apk",
+      "sha256": "4a340299dcf662bbeec1e05a7ebbabb551c1c815ca66482dd95047c99024f108"
+    }
+  }
 }
