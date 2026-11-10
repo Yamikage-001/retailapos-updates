@@ -1,11 +1,11 @@
 {
-  "version": "1.0.1",
-  "build": 2,
-  "notes": "Stock fixes and automatic updates",
+  "version": "1.0.3",
+  "build": 3,
+  "notes": "Stock fixes: offline sales sync faster and stock no longer jumps back up. Updates now install automatically.",
   "platforms": {
     "android": {
-      "url": "https://github.com/Yamikage-001/retailapos-updates/releases/download/v1.0.1+2/RetailaPOS-v1.0.1+2-android.apk",
-      "sha256": "4a340299dcf662bbeec1e05a7ebbabb551c1c815ca66482dd95047c99024f108"
+      "url": "https://github.com/Yamikage-001/retailapos-updates/releases/download/v1.0.3+3/RetailaPOS-v1.0.3+3-android.apk",
+      "sha256": "2cf47f5191ce0b5ae5b1c6bb2b89c9a35a5922cb73b08fa397ad0689113f2e4d"
     }
   }
 }
